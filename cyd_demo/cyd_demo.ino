@@ -1,21 +1,25 @@
 //
 // LVGL demo for CYDs (Cheap Yellow Displays)
 // written by Larry Bank (bitbank@pobox.com)
-// Feb 24, 2025
-// This demo makes use of my display librarie:
+// Feb 25, 2025
+// This demo makes use of my display and touch libraries:
 // https://github.com/bitbank2/bb_spi_lcd
+// https://github.com/bitbank2/bb_captouch
 //
 #include <lvgl.h>
 #include <bb_spi_lcd.h>
+#include <bb_captouch.h>
+BBCapTouch bbct;
 BB_SPI_LCD lcd;
 uint16_t dma_buf[512];
-#define BUTTON_A 7
-#define BUTTON_B 8
-#define BUTTON_C 9
-const lv_point_t points_array[3] = { {53,30}, {160,30}, {261, 30}};
 lv_obj_t *label, *msg_label, *label_a, *label_b, *label_c;
 lv_obj_t *btn1, *btn2, *btn3;
 lv_obj_t *scr;
+// GPIO assignments for the capactive touch sensor of the JC4827W543
+#define TOUCH_SDA 8
+#define TOUCH_SCL 4
+#define TOUCH_RST 38
+#define TOUCH_INT 3
 
 /*To use the built-in examples and demos of LVGL uncomment the includes below respectively.
  *You also need to copy `lvgl/examples` to `lvgl/src/examples`. Similarly for the demos `lvgl/demos` to `lvgl/src/demos`.
@@ -59,22 +63,18 @@ void my_disp_flush( lv_display_t *disp, const lv_area_t *area, uint8_t * px_map)
     lv_display_flush_ready(disp);
 } /* my_disp_flush */
 
-/* Read the button states */
-void my_button_read( lv_indev_t * indev, lv_indev_data_t * data )
+/* Read the touch sensor */
+void my_touch_read( lv_indev_t * indev, lv_indev_data_t * data )
 {
-    static uint32_t last_btn = 0;   /* Store the last pressed button */
-    int btn_pr = -1;     /* Get the ID (0,1,2...) of the pressed button */
-    if (digitalRead(BUTTON_A)) btn_pr = 0;
-    else if (digitalRead(BUTTON_B)) btn_pr = 1;
-    else if (digitalRead(BUTTON_C)) btn_pr = 2;
-    if(btn_pr >= 0) {               /* Is there a button press? (E.g. -1 indicated no button was pressed) */
-       last_btn = btn_pr;           /* Save the ID of the pressed button */
-       data->state = LV_INDEV_STATE_PRESSED;  /* Set the pressed state */
+TOUCHINFO ti;
+    if (bbct.getSamples(&ti) && ti.count >= 1) { // a touch event
+        data->state = LV_INDEV_STATE_PRESSED;
+        data->point.x = ti.x[0];
+        data->point.y = ti.y[0];
     } else {
-       data->state = LV_INDEV_STATE_RELEASED; /* Set the released state */
+        data->state = LV_INDEV_STATE_RELEASED;
     }
-    data->btn_id = last_btn;         /* Save the last button */
-} /* my_button_read() */
+} /* my_touch_read() */
 
 static void event_handler_a(lv_event_t * e)
 {
@@ -105,10 +105,6 @@ void setup()
     Serial.begin( 115200 );
     delay(3000);
     Serial.println( LVGL_Arduino );
-    // We'll use the physical buttons of the Tufty2040 as input devices
-    pinMode(BUTTON_A, INPUT_PULLDOWN);
-    pinMode(BUTTON_B, INPUT_PULLDOWN);
-    pinMode(BUTTON_C, INPUT_PULLDOWN);
     lv_init();
 
     /*Set a tick source so that LVGL will know how much time elapsed. */
@@ -121,9 +117,11 @@ void setup()
 
     lv_display_t * disp;
     int w, h, iSize;
-    lcd.begin(DISPLAY_TUFTY2040 /*DISPLAY_WS_AMOLED_18*/);
+    lcd.begin(DISPLAY_CYD_543); // the JC4827W543 (with optional capactive or resistive touch sensor)
     w = lcd.width();
     h = lcd.height();
+    // Initialize the capacitive touch sensor library
+    bbct.init(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_INT);
     iSize = DRAW_BUF_SIZE(w, h);
     draw_buf = (uint16_t *)malloc(iSize);
     disp = lv_display_create(w, h);
@@ -132,9 +130,8 @@ void setup()
 
     /* Initialize the input device */
     lv_indev_t * indev = lv_indev_create();
-    lv_indev_set_type(indev, LV_INDEV_TYPE_BUTTON); // use the physical buttons of the Tufty
-    lv_indev_set_read_cb(indev, my_button_read);
-    lv_indev_set_button_points(indev, points_array);
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /*Touchpad should have POINTER type*/
+    lv_indev_set_read_cb(indev, my_touch_read);
 
     /* Create a simple label
      * ---------------------
@@ -159,7 +156,7 @@ void setup()
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
     label = lv_label_create( lv_screen_active() );
-    lv_label_set_text( label, "LVGL Physical Button Demo" );
+    lv_label_set_text( label, "LVGL Touch Button Demo" );
     lv_obj_set_style_text_color(label, lv_color_make(0,0xff,0), 0);
     lv_obj_align( label, LV_ALIGN_CENTER, 0, 0 );
 
@@ -170,7 +167,7 @@ void setup()
 
     btn1 = lv_button_create(lv_screen_active());
     lv_obj_set_size(btn1, 80, 60);
-    lv_obj_set_pos(btn1, 13, 0);
+    lv_obj_align( btn1, LV_ALIGN_CENTER, -150, -100);
     lv_obj_add_event_cb(btn1, event_handler_a, LV_EVENT_PRESSED, NULL);
     lv_obj_remove_flag(btn1, LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_set_style_bg_color(btn1, lv_color_make(0,0xff,0), LV_PART_MAIN); // green
@@ -181,7 +178,7 @@ void setup()
 
     btn2 = lv_button_create(lv_screen_active());
     lv_obj_set_size(btn2, 80, 60);
-    lv_obj_set_pos(btn2, 119, 0);
+    lv_obj_align(btn2 , LV_ALIGN_CENTER, 0, -100 );
     lv_obj_add_event_cb(btn2, event_handler_b, LV_EVENT_PRESSED, NULL);
     lv_obj_remove_flag(btn2, LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_set_style_bg_color(btn2, lv_color_make(0xff,0xff,0), LV_PART_MAIN); // yellow
@@ -192,7 +189,7 @@ void setup()
 
     btn3 = lv_button_create(lv_screen_active());
     lv_obj_set_size(btn3, 80, 60);
-    lv_obj_set_pos(btn3, 226, 0);
+    lv_obj_align(btn3, LV_ALIGN_CENTER, 150, -100 );
     lv_obj_add_event_cb(btn3, event_handler_c, LV_EVENT_PRESSED, NULL);
     lv_obj_remove_flag(btn3, LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_set_style_bg_color(btn3, lv_color_make(0,0,0xff), LV_PART_MAIN); // blue
@@ -209,3 +206,4 @@ void loop()
     lv_timer_handler(); /* let the GUI do its work */
     delay(5); /* let this time pass */
 }
+
