@@ -1,5 +1,15 @@
-/*Using LVGL with Arduino requires some extra steps:
- *Be sure to read the docs here: https://docs.lvgl.io/master/integration/framework/arduino.html  */
+//
+// LVGL example which uses bb_epaper as the display component
+// written by Larry Bank (bitbank@pobox.com)
+// This specific example is for Spectra6 eink displays
+// It converts the RGB565 output of LVGL into the 6 unique
+// colors of the display. Anti-aliasing is not supported natively on the Spectra6
+// Any dithering would need to happen in LVGL
+//
+// The easiest way to get started is to install LVGL from the Arduino library manager
+// This sketch runs without having to change any of the default settings
+// This is based on the version 9.2.2 of LVGL (the latest as of this writing)
+//
 #include <lvgl.h>
 #include <bb_epaper.h>
 BBEPAPER bbep(EP81_SPECTRA_1024x576);
@@ -131,7 +141,7 @@ void setup()
     lv_display_set_flush_cb(disp, my_disp_flush);
     lv_display_set_buffers(disp, draw_buf, NULL, iSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    /*Initialize the (dummy) input device driver*/
+    /*Initialize the input device driver*/
     lv_indev_t * indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /*Touchpad should have POINTER type*/
     lv_indev_set_read_cb(indev, my_touch_read);
